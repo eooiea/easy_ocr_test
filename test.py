@@ -5,7 +5,7 @@ print("--- 디버깅 테스트 시작 ---")
 
 # (1) 테스트할 실제 스크린샷 이미지 경로
 # (★중요★) 본인의 스크린샷 파일 경로로 변경하세요
-test_image_path = "C:/easy/toss_photo/pc_dark_mode.png" 
+test_image_path = "C:/Coding/easy_ocr_test/toss_photo/dallor_dark_mode.jpg" 
 
 image = cv2.imread(test_image_path)
 

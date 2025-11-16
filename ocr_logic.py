@@ -1,5 +1,4 @@
 import easyocr
-import cv2
 import numpy as np
 import re # 정규표현식(Regex)을 위한 라이브러리
 import json
@@ -20,6 +19,19 @@ except Exception as e:
 
 # --- 2. (정의) 유틸리티 함수들 ---
 
+def print_pretty_dict(data_dict):
+    """
+    딕셔너리를 JSON 형식으로 예쁘게 출력합니다.
+    (한글 깨짐 방지 + 들여쓰기)
+    """
+    try:
+        # indent=2: 2칸 들여쓰기 (4로 해도 됩니다)
+        # ensure_ascii=False: ★한글이 \uXXXX 처럼 깨지지 않도록 보장 (필수!)★
+        print(json.dumps(data_dict, indent=2, ensure_ascii=False))
+        
+    except TypeError as e:
+        # 딕셔너리가 아닌 다른 타입이 들어올 경우의 예외 처리
+        print(f"출력 중 오류 발생: {e}\n원본 데이터: {data_dict}")
 
 def get_y_center(bbox):
     """EasyOCR 바운딩 박스(bbox)의 Y축 중심 좌표를 반환합니다."""
@@ -69,17 +81,43 @@ def is_total_price(text):
     return False
 
 def clean_price_text(price_text):
-    """'1,234,500원', '$1,234.50' 같은 텍스트를 숫자(int/float)로 변환합니다."""
-    try:
-        # 1. 모든 통화 기호와 쉼표를 제거
-        cleaned = price_text.replace('원', '').replace(',', '').replace('$', '')
-        cleaned = cleaned.strip()
+    """
+    '1,234,500원', '$1,234.50' 같은 텍스트를 (숫자, '통화코드') 튜플로 변환합니다.
+    (예: [1234500, 'KRW'])
+    """
+    text_stripped = price_text.strip()
+    currency_code = None # 'KRW', 'USD' 등
+    number_text = text_stripped
 
-        # 2. 소수점(.)이 남아있다면 float으로 변환, 아니면 int로 변환
-        if '.' in cleaned:
-            return float(cleaned)
+    # 1. 통화 기호 식별 및 표준 코드로 변환
+    
+    if text_stripped.endswith('원'):
+        currency_code = 'KRW' # '원' -> 'KRW'
+        number_text = text_stripped.replace('원', '')
+        
+    elif text_stripped.startswith('$'):
+        currency_code = 'USD' # '$' -> 'USD'
+        number_text = text_stripped.replace('$', '')
+        
+    else:
+        # --- ★★★ 수정된 부분 ★★★ ---
+        # is_total_price를 통과했음에도 불구하고
+        # 명확한 통화 기호를 식별할 수 없다면,
+        # 이 데이터는 유효하지 않은 것으로 간주하고 None을 반환합니다.
+        return None
+
+    try:
+        # 2. 쉼표 제거
+        number_text = number_text.replace(',', '')
+        
+        # 3. int 또는 float으로 변환
+        number_value = None
+        if '.' in number_text:
+            number_value = float(number_text)
         else:
-            return int(cleaned)
+            number_value = int(number_text)
+            
+        return (number_value, currency_code) # (숫자, '통화코드') 튜플 반환
             
     except ValueError:
         # 숫자로 변환 실패 시
@@ -139,12 +177,13 @@ def get_portfolio_from_image(image_cv: np.ndarray):
         return {"error": f"EasyOCR readtext 실행 중 오류: {e}"}
         
     print(f"OCR 결과 (Raw): {len(results)}개의 텍스트 감지")
-    
+
     # (2) 후보군 분류 (Y축 파싱 준비)
     initial_candidates = []  # { 'text': '삼성전자', 'y_center': 150.5 }
     price_candidates = []  # { 'text': '1,234,500원', 'y_center': 151.0, 'x': 500 }
 
     for (bbox, text, prob) in results:
+        print(text)
         y_center = get_y_center(bbox)
         
         # '종목명' 후보 필터링
@@ -152,8 +191,8 @@ def get_portfolio_from_image(image_cv: np.ndarray):
             initial_candidates.append({
                 'text': text.strip(),
                 'y_center': y_center,
-                'x': bbox[0][0],
-                'bbox': bbox
+                'x': int(bbox[0][0]),
+                # 'bbox': bbox
             })
             
         # '총 가격' 후보 필터링
@@ -161,7 +200,7 @@ def get_portfolio_from_image(image_cv: np.ndarray):
             price_candidates.append({
                 'text': text.strip(),
                 'y_center': y_center,
-                'x': bbox[0][0] # X좌표 (나중에 정렬용으로 쓸 수 있음)
+                'x': int(bbox[0][0]) # X좌표 (나중에 정렬용으로 쓸 수 있음)
             })
             
     candidate_x_coords = [s['x'] for s in initial_candidates]
@@ -178,7 +217,11 @@ def get_portfolio_from_image(image_cv: np.ndarray):
     for candidate in initial_candidates:
         if candidate['x'] >= X_THRESHOLD:
             stock_candidates.append(candidate)
-
+    # print("stock")
+    # print_pretty_dict(stock_candidates)
+    # print("--------------------------------")
+    # print("price_candidates")
+    # print_pretty_dict(price_candidates)
     print(f"파싱: 종목명 후보 {len(stock_candidates)}개, 가격 후보 {len(price_candidates)}개")
     # (3) Y축 기반 매칭 (Spatial Join)
     portfolio = {}
