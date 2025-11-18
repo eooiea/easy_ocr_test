@@ -54,7 +54,10 @@ def is_stock_name(text):
     
     # [가-힣A-Za-z0-9] -> 한글, 영어, 숫자
     # {2,} -> 2글자 이상
-    if re.search(r'[가-힣A-Za-z0-9]{2,}', text) and not re.search(r'[%$원]', text): # %나 원이 포함되지 않음
+    has_valid_chars = re.search(r'([가-힣]{2,}|[A-Za-z]{2,})', text)
+    has_forbidden_currency = re.search(r'\d+\s*(?:원|\$)', text)
+
+    if has_valid_chars and not has_forbidden_currency:
         return True
     return False
 
@@ -155,7 +158,6 @@ def clean_stock_text_list(text_list):
 
 
 
-
 # --- 3. (핵심) 메인 로직 함수 ---
 
 def get_portfolio_from_image(image_cv: np.ndarray):
@@ -172,7 +174,7 @@ def get_portfolio_from_image(image_cv: np.ndarray):
     # detail=1 : 바운딩 박스(bbox) 좌표를 함께 받음
     # paragraph=False : 텍스트를 문단이 아닌 개별 라인으로 받음
     try:
-        results = reader.readtext(image_cv, detail=1, paragraph=False)
+        results = reader.readtext(image_cv, detail=1, paragraph=False, mag_ratio=1.1)
     except Exception as e:
         return {"error": f"EasyOCR readtext 실행 중 오류: {e}"}
         
@@ -183,7 +185,7 @@ def get_portfolio_from_image(image_cv: np.ndarray):
     price_candidates = []  # { 'text': '1,234,500원', 'y_center': 151.0, 'x': 500 }
 
     for (bbox, text, prob) in results:
-        print(text)
+        # print(text)
         y_center = get_y_center(bbox)
         
         # '종목명' 후보 필터링
