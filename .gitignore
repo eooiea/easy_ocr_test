@@ -1,6 +1,4 @@
 # 무시할 특정 파일들
-turing.py
-preprocess.py
 __pycache__/
 *.pyc
 .vscode/
